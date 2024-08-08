@@ -1,25 +1,24 @@
 import discord
 from discord.ext import commands
+import asyncio
 
 def get_settings():
     settings = {}
     try:
-        with open('data.txt', 'r') as file:
+        with open('data.txt', 'r', encoding='utf-8') as file:
             for line in file:
                 if line.startswith('TOKEN='):
                     settings['TOKEN'] = line.strip().split('=')[1]
-                elif line.startswith('ADMINUSER='):
-                    settings['ADMINUSER'] = line.strip().split('=')[1]
                 elif line.startswith('ADMIN_SERVER='):
                     settings['ADMIN_SERVER'] = line.strip().split('=')[1]
                 elif line.startswith('ROLE_NAME='):
                     settings['ROLE_NAME'] = line.strip().split('=')[1]
     except FileNotFoundError:
-        print("Not data.txt")
+        print("data.txt not found")
     return settings
 
 settings = get_settings()
-ROLE_NAME = settings.get('ROLE_NAME')
+TOKEN = settings.get('TOKEN')
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -29,14 +28,17 @@ intents.guild_reactions = True
 intents.guild_scheduled_events = True
 intents.members = True
 
-client = commands.Bot(command_prefix='/', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-@client.event
+@bot.event
 async def on_ready():
-    print(f'Longin Success!: {client.user}')
+    print(f'Logged in as {bot.user.name} ({bot.user.id})')
+    print('Bot is ready and running!')
 
-TOKEN = settings.get('TOKEN')
-if TOKEN:
-    client.run(TOKEN)
-else:
-    print("TOKEN not set")
+async def main():
+    async with bot:
+        await bot.load_extension('admin')
+        await bot.start(TOKEN)
+
+if __name__ == "__main__":
+    asyncio.run(main())

