@@ -21,7 +21,7 @@ async def on_message(message):
         return
 
     if isinstance(message.channel, discord.DMChannel):
-        if message.content.startswith('Troll'):
+        if message.content.startswith('troll'):
             await troll_command(message)
         elif message.content.startswith('remove'):
             await remove_command(message)
